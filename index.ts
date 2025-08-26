@@ -1,71 +1,112 @@
-#!/usr/bin/env bun
+import { Base, Convert } from "./typescript_land/generated-src/base"
+import {$} from "bun"
 
-import { Convert, Base } from "./typescript_land/generated-src/base.js";
+// We're building a graph
+// System will have input model 
+// System will have output model
+// System will have next steps
+// We will explore the shape and assert that inputs match to previous step outputs
+// 
+enum Language {
+  Python = "python",
+  Typescript = "typescript"
+}
 
-// Bun-specific features demonstration
-console.log("🚀 Running with Bun!");
+interface Shape {
+  schema: String
+  name: String
+}
 
-// 1. Environment variables with Bun
-const port = process.env.PORT || 3000;
-console.log(`Server will run on port: ${port}`);
-
-// 2. File system operations with Bun
-async function readSchemaFile() {
-  try {
-    const schemaContent = await Bun.file("./schemas/base.schema.json").text();
-    console.log("✅ Successfully read schema file");
-    return schemaContent;
-  } catch (error) {
-    console.error("❌ Error reading schema file:", error);
-    throw error;
+abstract class Node {
+  readonly targets: Node[]
+  input: Shape
+  output: Shape
+  
+  constructor(targets: Node[], input: Shape, output: Shape) {
+    this.targets = targets
+    this.input = input
+    this.output = output
   }
 }
 
-// 3. Parse and validate JSON using our generated types
-async function validateAndParseJson(jsonString: string) {
-  try {
-    const base = Convert.toBase(jsonString);
-    console.log("✅ JSON validation successful");
-    console.log(`Parsed object ID: ${base.properties.id.description}`);
-    return base;
-  } catch (error) {
-    console.error("❌ JSON validation failed:", error);
-    throw error;
-  }
-}
+class CustomWorker extends Node {
+  scriptName: String
+  lang: Language
+  commmand: String
 
-// 4. Create a simple HTTP server with Bun
-const server = Bun.serve({
-  port,
-  async fetch(req) {
-    const url = new URL(req.url);
-    
-    if (url.pathname === "/") {
-      return new Response("Welcome to Connect the Systems API! Use /validate to validate JSON");
-    }
-    
-    if (url.pathname === "/validate" && req.method === "POST") {
-      try {
-        const body = await req.text();
-        const parsed = await validateAndParseJson(body);
-        return Response.json({
-          success: true,
-          data: parsed,
-          message: "JSON validated successfully"
-        });
-      } catch (error) {
-        return Response.json({
-          success: false,
-          error: error.message
-        }, { status: 400 });
+  constructor(command: String | null | undefined = undefined, lang: Language, scriptName: String) {
+    super(
+      [],
+      {
+      schema: "",
+      name: ""
+      },
+      {
+        schema: "",
+        name: ""
       }
-    }
-    
-    if (url.pathname === "/health") {
-      return Response.json({ status: "healthy", runtime: "Bun" });
-    }
-    
-    return new Response("Not Found", { status: 404 });
-  },
-});
+    )
+    this.commmand = command == null ? "" : command
+    this.lang = lang
+    this.scriptName = scriptName
+  }
 
+  async execute(shouldRebuild: Boolean = false): Promise<string> {
+    const land = `${this.lang}_land`
+    if (shouldRebuild) {
+        await $`docker build -t "name:${land}" ./${land}` 
+    }
+
+    return await $`docker run name:${land} ${this.scriptName} ${this.commmand}`.text()
+  }
+}
+
+const baseSchema: Base = {
+  schema: "",
+  id: "",
+  title: "",
+  description: "",
+  type: "",
+  definitions: {
+    uuid: {
+      type: "",
+      pattern: "",
+      description: ""
+    },
+    timestamp: {
+      type: "",
+      format: "",
+      description: ""
+    },
+    email: {
+      type: "",
+      format: "",
+      description: ""
+    },
+    url: {
+      type: "",
+      format: "",
+      description: ""
+    }
+  },
+  properties: {
+    id: {
+      ref: "",
+      description: ""
+    },
+    createdAt: {
+      ref: "",
+      description: ""
+    }
+  },
+  required: [],
+  additionalProperties: false
+}
+
+const pyWorker: CustomWorker = new CustomWorker(
+  null,
+  Language.Python,
+  "main.py", 
+)
+
+console.log(await pyWorker.execute())
