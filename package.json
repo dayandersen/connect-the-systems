@@ -1,0 +1,20 @@
+{
+  "name": "connect-the-systems",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "quicktype": "^23.2.6"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "quicktype": "^23.2.6"
+  },
+  "scripts": {
+    "pre-build-python": "quicktype -o python_land/generated-src/base.py --lang python --python-version 3.7 schemas/base.schema.json",
+    "pre-build-typescript": "quicktype schemas/base.schema.json -o typescript_land/generated-src/base.ts --runtime-typecheck --prefer-types --nice-property-names --acronym-style camel --explicit-unions",
+    "pre-build": "bun run pre-build-python && bun run pre-build-typescript"
+  }
+}
