@@ -1,5 +1,5 @@
-import { Base, Convert } from "./typescript_land/generated-src/base"
 import {$} from "bun"
+import { SignatureKind } from "typescript"
 
 // We're building a graph
 // System will have input model 
@@ -22,21 +22,36 @@ abstract class Node {
   input: Shape
   output: Shape
   
-  constructor(targets: Node[], input: Shape, output: Shape) {
-    this.targets = targets
+  constructor(input: Shape, output: Shape, targets?: Node[]) {
+    this.targets = targets ? targets : []
     this.input = input
     this.output = output
   }
+
+  next(...nextNode: Node[]) {
+    this.targets.push(...nextNode)
+  }
+
+  abstract execute(): Promise<string>
 }
 
-class CustomWorker extends Node {
-  scriptName: String
-  lang: Language
-  commmand: String
-
-  constructor(command: String | null | undefined = undefined, lang: Language, scriptName: String) {
+class BaseNode extends Node {
+  override async execute(): Promise<string> {
+    const combinedContext: Promise<string>[] = []
+    this.targets.forEach(async (n: Node) => {
+      combinedContext.push(n.execute())
+    })
+    const r = await Promise.allSettled(combinedContext).then(resultList => {
+      const concat: string[] = []
+      resultList.forEach( result => {
+        concat.push(JSON.stringify(result))
+      })
+      return concat.join(",")
+    })
+    return r
+  }
+  constructor() {
     super(
-      [],
       {
       schema: "",
       name: ""
@@ -44,14 +59,35 @@ class CustomWorker extends Node {
       {
         schema: "",
         name: ""
-      }
+      },)
+  }
+  
+}
+
+class DockerWorker extends Node {
+  scriptName: String
+  lang: Language
+  commmand: String
+
+  constructor(lang: Language, scriptName: String, command: String | null | undefined = undefined) {
+    super(
+      {
+      schema: "",
+      name: ""
+      },
+      {
+        schema: "",
+        name: ""
+      },
+      [],
     )
     this.commmand = command == null ? "" : command
     this.lang = lang
     this.scriptName = scriptName
   }
 
-  async execute(shouldRebuild: Boolean = false): Promise<string> {
+  // TOOD: Need to fix the fact that the system doesn't know if it needs to rebuild or not when executed as part of a tree
+  override async execute(shouldRebuild: Boolean = false): Promise<string> {
     const land = `${this.lang}_land`
     if (shouldRebuild) {
         await $`docker build -t "name:${land}" ./${land}` 
@@ -61,52 +97,16 @@ class CustomWorker extends Node {
   }
 }
 
-const baseSchema: Base = {
-  schema: "",
-  id: "",
-  title: "",
-  description: "",
-  type: "",
-  definitions: {
-    uuid: {
-      type: "",
-      pattern: "",
-      description: ""
-    },
-    timestamp: {
-      type: "",
-      format: "",
-      description: ""
-    },
-    email: {
-      type: "",
-      format: "",
-      description: ""
-    },
-    url: {
-      type: "",
-      format: "",
-      description: ""
-    }
-  },
-  properties: {
-    id: {
-      ref: "",
-      description: ""
-    },
-    createdAt: {
-      ref: "",
-      description: ""
-    }
-  },
-  required: [],
-  additionalProperties: false
-}
-
-const pyWorker: CustomWorker = new CustomWorker(
-  null,
+const pyWorker: DockerWorker = new DockerWorker(
   Language.Python,
   "main.py", 
 )
 
-console.log(await pyWorker.execute())
+const tsWorker: DockerWorker = new DockerWorker(
+  Language.Typescript,
+  "main.ts",
+)
+
+const baseNode = new BaseNode()
+baseNode.next(pyWorker, tsWorker)
+console.log(await baseNode.execute())
